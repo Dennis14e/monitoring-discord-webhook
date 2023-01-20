@@ -16,8 +16,8 @@ parser.add_argument('-r', dest = 'discord_url', metavar = 'Discord webhook url',
 parser.add_argument('-i', dest = 'icinga2_url', metavar = 'Icinga2 web url')
 
 parser.add_argument('-t', dest = 'notification_type', metavar = 'Notification type', required = True)
-parser.add_argument('-b', dest = 'notification_author', metavar = 'Notification author')
-parser.add_argument('-c', dest = 'notification_comment', metavar = 'Notification comment')
+parser.add_argument('-b', dest = 'notification_author', metavar = 'Notification author', default = '')
+parser.add_argument('-c', dest = 'notification_comment', metavar = 'Notification comment', default = '')
 parser.add_argument('-d', dest = 'notification_timestamp', metavar = 'Notification timestamp', required = True)
 parser.add_argument('-x', dest = 'notification_notes', metavar = 'Notification notes')
 
@@ -96,10 +96,10 @@ embed_fields.append({
     'value': args.notification_timestamp,
 })
 
-if args.notification_comment is not None:
+if args.notification_comment != '':
     embed_comment = args.notification_comment
 
-    if args.notification_author is not None:
+    if args.notification_author != '':
         embed_comment += ' ({})'.format(args.notification_author)
 
     embed_fields.append({
