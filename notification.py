@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 
+"""Script to send Icinga2 notifications to Discord channel via webhook"""
 import sys
 import argparse
-import requests
 import urllib.parse
+import requests
 
 parser = argparse.ArgumentParser(
     prog = 'Icinga2 Discord Notification',
@@ -16,82 +17,83 @@ parser.add_argument('-r', dest = 'discord_url', metavar = 'Discord webhook url',
 parser.add_argument('-i', dest = 'icinga2_url', metavar = 'Icinga2 web url')
 
 parser.add_argument('-t', dest = 'notification_type', metavar = 'Notification type', required = True)
-parser.add_argument('-b', dest = 'notification_author', metavar = 'Notification author', default = '')
-parser.add_argument('-c', dest = 'notification_comment', metavar = 'Notification comment', default = '')
+parser.add_argument('-b', dest = 'notification_author', metavar = 'Notification author', nargs = '?', default = '')
+parser.add_argument('-c', dest = 'notification_comment', metavar = 'Notification comment', nargs = '?', default = '')
 parser.add_argument('-d', dest = 'notification_timestamp', metavar = 'Notification timestamp', required = True)
-parser.add_argument('-x', dest = 'notification_notes', metavar = 'Notification notes')
+parser.add_argument('-x', dest = 'notification_notes', metavar = 'Notification notes', nargs = '?', default = '')
 
 parser.add_argument('-s', dest = 'check_state', metavar = 'Host/Service state', required = True)
 parser.add_argument('-o', dest = 'check_output', metavar = 'Host/Service output', required = True)
 
 parser.add_argument('-l', dest = 'host_name', metavar = 'Host name', required = True)
 parser.add_argument('-n', dest = 'host_display_name', metavar = 'Host display name', required = True)
-parser.add_argument('-4', dest = 'host_address', metavar = 'Host IPv4 address', default = '')
-parser.add_argument('-6', dest = 'host_address6', metavar = 'Host IPv6 address', default = '')
+parser.add_argument('-4', dest = 'host_address', metavar = 'Host IPv4 address', nargs = '?', default = '')
+parser.add_argument('-6', dest = 'host_address6', metavar = 'Host IPv6 address', nargs = '?', default = '')
 
-parser.add_argument('-e', dest = 'service_name', metavar = 'Service name')
-parser.add_argument('-u', dest = 'service_display_name', metavar = 'Service display name')
+parser.add_argument('-e', dest = 'service_name', metavar = 'Service name', nargs = '?')
+parser.add_argument('-u', dest = 'service_display_name', metavar = 'Service display name', nargs = '?')
 
 args = parser.parse_args()
 
 
-# Username
-discord_username = 'Icinga2 Monitoring'
+# Dict
+NOTIFICATION_VARS = {
+    'check_type': 'host',
+    'discord_username': 'Icinga2 Monitoring',
+    'embed_color': 0,
+    'embed_title': f'[{args.notification_type} Notification] ',
+    'embed_fields': [],
+}
 
 
 # Is check host or service check?
-check_type = 'host'
 if args.service_name is not None:
-    check_type = 'service'
+    NOTIFICATION_VARS['check_type'] = 'service'
 
 
 # Embed color based on state
-embed_color = 0
-
-if args.check_state == 'UP' or args.check_state == 'OK':
+if args.check_state in ('UP', 'OK'):
     #006400
-    embed_color = 25600
+    NOTIFICATION_VARS['embed_color'] = 25600
 elif args.check_state == 'WARNING':
     #B96500
-    embed_color = 12150016
-elif args.check_state == 'DOWN' or args.check_state == 'CRITICAL':
+    NOTIFICATION_VARS['embed_color'] = 12150016
+elif args.check_state in ('DOWN', 'CRITICAL'):
     #8B0000
-    embed_color = 9109504
+    NOTIFICATION_VARS['embed_color'] = 9109504
 elif args.check_state == 'UNKNOWN':
     #800080
-    embed_color = 8388736
+    NOTIFICATION_VARS['embed_color'] = 8388736
 
 
 # Embed title
-embed_title = '[{} Notification]'.format(args.notification_type)
-
-if check_type == 'host':
-    embed_title = '{} Host {} - {}'.format(embed_title, args.host_display_name, args.check_state)
+if NOTIFICATION_VARS['check_type'] == 'host':
+    NOTIFICATION_VARS['embed_title'] += f'Host {args.host_display_name}'
 else:
-    embed_title = '{} {} - ({} - {})'.format(embed_title, args.check_state, args.host_display_name, args.service_display_name)
+    NOTIFICATION_VARS['embed_title'] += f'Service {args.service_display_name} on {args.host_display_name}'
+
+NOTIFICATION_VARS['embed_title'] += f' - {args.check_state})'
 
 
 # Embed fields
-embed_fields = []
-
-embed_fields.append({
+NOTIFICATION_VARS['embed_fields'].append({
     'name': 'Hostname',
     'value': args.host_name,
 })
 
 if args.host_address != '':
-    embed_fields.append({
+    NOTIFICATION_VARS['embed_fields'].append({
         'name': 'IPv4 address',
         'value': args.host_address,
     })
 
 if args.host_address6 != '':
-    embed_fields.append({
+    NOTIFICATION_VARS['embed_fields'].append({
         'name': 'IPv6 address',
         'value': args.host_address6,
     })
 
-embed_fields.append({
+NOTIFICATION_VARS['embed_fields'].append({
     'name': 'Notification date',
     'value': args.notification_timestamp,
 })
@@ -100,15 +102,15 @@ if args.notification_comment != '':
     embed_comment = args.notification_comment
 
     if args.notification_author != '':
-        embed_comment += ' ({})'.format(args.notification_author)
+        embed_comment += f' ({args.notification_author})'
 
-    embed_fields.append({
+    NOTIFICATION_VARS['embed_fields'].append({
         'name': 'Comment',
         'value': embed_comment,
     })
 
-if args.notification_notes is not None:
-    embed_fields.append({
+if args.notification_notes != '':
+    NOTIFICATION_VARS['embed_fields'].append({
         'name': 'Notes',
         'value': args.notification_notes,
     })
@@ -117,12 +119,15 @@ if args.icinga2_url is not None:
     args.icinga2_url = args.icinga2_url.rstrip('/')
     args.icinga2_url += '/monitoring/'
 
-    if check_type == 'host':
-        args.icinga2_url += 'host/show?host={}'.format(urllib.parse.quote(args.host_name))
+    if NOTIFICATION_VARS['check_type'] == 'host':
+        args.icinga2_url += \
+            f'host/show?host={urllib.parse.quote(args.host_name)}'
     else:
-        args.icinga2_url += 'service/show?host={}&service={}'.format(urllib.parse.quote(args.host_name), urllib.parse.quote(args.service_name))
+        args.icinga2_url += \
+            f'service/show?host={urllib.parse.quote(args.host_name)}' \
+            f'&service={urllib.parse.quote(args.service_name)}'
 
-    embed_fields.append({
+    NOTIFICATION_VARS['embed_fields'].append({
         'name': 'Icinga2 web',
         'value': args.icinga2_url,
     })
@@ -130,15 +135,15 @@ if args.icinga2_url is not None:
 
 # Request
 req_data = {
-    'username': discord_username,
+    'username': NOTIFICATION_VARS['discord_username'],
     'embeds': [{
-        'title': embed_title,
-        'color': embed_color,
+        'title': NOTIFICATION_VARS['embed_title'],
+        'color': NOTIFICATION_VARS['embed_color'],
         'author': {
-            'name': discord_username,
+            'name': NOTIFICATION_VARS['discord_username'],
         },
         'description': args.check_output,
-        'fields': embed_fields,
+        'fields': NOTIFICATION_VARS['embed_fields'],
     }],
 }
 
@@ -146,12 +151,12 @@ if args.verbose >= 1:
     print(req_data)
 
 try:
-    res = requests.post(args.discord_url, json = req_data)
+    res = requests.post(args.discord_url, json = req_data, timeout = 10)
 
     if args.verbose >= 1:
         print(res.text)
 except requests.exceptions.RequestException as e:
-    raise SystemExit(e)
+    raise SystemExit(e) from e
 
 
 sys.exit(0)
